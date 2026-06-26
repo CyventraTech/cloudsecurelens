@@ -1,0 +1,319 @@
+// Prisma v7 schema — datasource URL is defined in prisma.config.ts, not here
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+// Authentication
+// ============================================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?   // hashed, for credentials provider
+  role          UserRole  @default(VIEWER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts Account[]
+  sessions Session[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================================
+// Login Audit (from AWS CloudTrail)
+// ============================================================
+
+model LoginAudit {
+  id          String         @id @default(cuid())
+  eventId     String         @unique // CloudTrail eventID
+  eventType   LoginEventType
+  eventTime   DateTime
+  username    String
+  sourceIp    String?
+  userAgent   String?        @db.Text
+  region      String?
+  mfaUsed     Boolean        @default(false)
+  loginResult LoginResult
+  errorCode   String?
+  errorMessage String?       @db.Text
+  awsAccountId String?
+  createdAt   DateTime       @default(now())
+
+  @@index([eventTime])
+  @@index([username])
+  @@index([loginResult])
+  @@map("login_audits")
+}
+
+// ============================================================
+// IAM Audit (from AWS IAM)
+// ============================================================
+
+model IAMAudit {
+  id              String    @id @default(cuid())
+  username        String
+  arn             String?
+  accountId       String?
+  mfaEnabled      Boolean   @default(false)
+  isRoot          Boolean   @default(false)
+  passwordEnabled Boolean?
+  passwordLastUsed DateTime?
+  passwordLastChanged DateTime?
+  passwordNextRotation DateTime?
+  accessKey1Active Boolean?
+  accessKey1LastRotated DateTime?
+  accessKey1LastUsed DateTime?
+  accessKey2Active Boolean?
+  accessKey2LastRotated DateTime?
+  accessKey2LastUsed DateTime?
+  certCount       Int       @default(0)
+  policyCount     Int       @default(0)
+  groupCount      Int       @default(0)
+  isActive        Boolean   @default(true)
+  riskLevel       RiskLevel @default(LOW)
+  snapshotAt      DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([username])
+  @@index([riskLevel])
+  @@map("iam_audits")
+}
+
+// ============================================================
+// Database Audit (Aurora RDS metadata)
+// ============================================================
+
+model DatabaseAudit {
+  id                    String          @id @default(cuid())
+  dbIdentifier          String          @unique
+  dbName                String?
+  engine                String
+  engineVersion         String?
+  status                String
+  instanceClass         String?
+  multiAz               Boolean         @default(false)
+  storageEncrypted      Boolean         @default(false)
+  publiclyAccessible    Boolean         @default(false)
+  iamDatabaseAuthEnabled Boolean        @default(false)
+  deletionProtection    Boolean         @default(false)
+  backupRetentionPeriod Int             @default(0)
+  allocatedStorage      Int?
+  endpoint              String?
+  port                  Int?
+  availabilityZone      String?
+  securityGroupIds      String[]
+  parameterGroupName    String?
+  clusterIdentifier     String?
+  riskLevel             RiskLevel       @default(LOW)
+  snapshotAt            DateTime        @default(now())
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  @@index([dbIdentifier])
+  @@index([riskLevel])
+  @@map("database_audits")
+}
+
+// ============================================================
+// Database Activity (query-level events)
+// ============================================================
+
+model DatabaseActivity {
+  id             String        @id @default(cuid())
+  dbIdentifier   String
+  queryType      QueryType
+  username       String?
+  databaseName   String?
+  queryText      String?       @db.Text
+  rowsAffected   Int?
+  durationMs     Float?
+  success        Boolean       @default(true)
+  errorCode      String?
+  errorMessage   String?       @db.Text
+  clientHostname String?
+  clientPort     Int?
+  sessionId      String?
+  transactionId  String?
+  recordedAt     DateTime
+  createdAt      DateTime      @default(now())
+
+  @@index([dbIdentifier])
+  @@index([queryType])
+  @@index([recordedAt])
+  @@index([success])
+  @@map("database_activities")
+}
+
+// ============================================================
+// Security Recommendations (AI-generated)
+// ============================================================
+
+model Recommendation {
+  id          String             @id @default(cuid())
+  title       String
+  description String             @db.Text
+  severity    Severity
+  category    RecommendationCategory
+  resource    String?            // affected AWS resource ARN or name
+  resourceType String?
+  status      RecommendationStatus @default(OPEN)
+  remediation String?            @db.Text
+  awsDocUrl   String?
+  resolvedAt  DateTime?
+  resolvedBy  String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([severity])
+  @@index([status])
+  @@index([category])
+  @@map("recommendations")
+}
+
+// ============================================================
+// Audit Logs (system activity)
+// ============================================================
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  resource   String?
+  resourceId String?
+  ipAddress  String?
+  userAgent  String?  @db.Text
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ============================================================
+// Enums
+// ============================================================
+
+enum UserRole {
+  ADMIN
+  ANALYST
+  VIEWER
+}
+
+enum LoginEventType {
+  CONSOLE_LOGIN
+  CONSOLE_LOGOUT
+  ROOT_LOGIN
+  IAM_LOGIN
+  FEDERATED_LOGIN
+  FAILED_LOGIN
+  ASSUME_ROLE
+}
+
+enum LoginResult {
+  SUCCESS
+  FAILURE
+  PARTIAL
+}
+
+enum RiskLevel {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+enum Severity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+enum RecommendationStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  IGNORED
+}
+
+enum RecommendationCategory {
+  IAM
+  MFA
+  ACCESS_KEY
+  ROOT_ACCOUNT
+  ENCRYPTION
+  NETWORK
+  BACKUP
+  LOGGING
+  DATABASE
+  COMPLIANCE
+}
+
+enum QueryType {
+  SELECT
+  INSERT
+  UPDATE
+  DELETE
+  CREATE_TABLE
+  DROP_TABLE
+  ALTER_TABLE
+  GRANT
+  REVOKE
+  OTHER
+  FAILED
+}
