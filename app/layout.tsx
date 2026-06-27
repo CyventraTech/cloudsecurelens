@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
+import { SessionProvider } from "@/components/providers";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -50,7 +51,9 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full dark`}
     >
       <body className="min-h-full flex flex-col antialiased bg-[#050b14] text-slate-200">
-        {children}
+        <SessionProvider>
+          {children}
+        </SessionProvider>
         <Toaster
           position="top-right"
           theme="dark"

@@ -1,21 +1,38 @@
 // lib/db/client.ts
-// Singleton Prisma client — safe for Next.js hot reload in development.
-// Prisma v7: connection URL is handled via prisma.config.ts, not injected here.
+// Prisma v7 requires a driver adapter — the connection URL no longer goes in
+// the schema file or the PrismaClient constructor directly.
+// We use @prisma/adapter-pg (PrismaPg) backed by node-postgres (pg).
 
 import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import pg from "pg";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log:
-      process.env.NODE_ENV === "development"
-        ? ["error", "warn"]
-        : ["error"],
+function createPrismaClient(): PrismaClient {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error(
+      "DATABASE_URL is not set. Copy .env.example to .env and fill in your database connection string."
+    );
+  }
+
+  const pool = new pg.Pool({
+    connectionString,
+    ssl: { rejectUnauthorized: false },
   });
+
+  const adapter = new PrismaPg(pool);
+
+  return new PrismaClient({
+    adapter,
+    log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
+  });
+}
+
+export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
