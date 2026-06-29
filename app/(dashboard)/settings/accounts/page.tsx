@@ -440,18 +440,30 @@ export default function AccountsPage() {
   const [showForm, setShowForm] = useState(false);
   const [syncingId, setSyncingId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await fetch("/api/accounts");
       const json = await res.json();
       if (json.success) setAccounts(json.data);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+
+    // Keep account cards (and their IAM/DB counts) fresh in the background.
+    const interval = setInterval(() => load(true), 20_000);
+    const onFocus = () => load(true);
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [load]);
 
   async function handleSync(id: string) {
     setSyncingId(id);
@@ -459,8 +471,11 @@ export default function AccountsPage() {
       const res = await fetch(`/api/accounts/${id}/sync`, { method: "POST" });
       const json = await res.json();
       if (json.success) {
+        const removed = (json.data.iamUsersRemoved ?? 0) + (json.data.dbInstancesRemoved ?? 0);
         toast.success("Sync complete", {
-          description: `Synced ${json.data.iamUsersSynced} IAM users, ${json.data.dbInstancesSynced} databases`,
+          description:
+            `Synced ${json.data.iamUsersSynced} IAM users, ${json.data.dbInstancesSynced} databases` +
+            (removed > 0 ? ` · removed ${removed} stale record${removed === 1 ? "" : "s"}` : ""),
         });
         load();
       } else {
@@ -504,7 +519,7 @@ export default function AccountsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={() => load()} disabled={loading}>
             <RefreshCw className={cn("w-3.5 h-3.5 mr-1.5", loading && "animate-spin")} />
             Refresh
           </Button>
