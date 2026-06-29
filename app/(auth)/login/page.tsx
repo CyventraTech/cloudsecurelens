@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Eye,
@@ -16,8 +16,8 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
+import { signIn } from "next-auth/react";
 import { loginSchema, type LoginInput } from "@/lib/auth/validation";
-import { loginAction } from "./actions";
 import { cn } from "@/lib/utils";
 
 function makeChallenge() {
@@ -54,13 +54,15 @@ export default function LoginPage() {
     setChallenge(makeChallenge());
   }, []);
 
+  const resolver = zodResolver(loginSchema) as unknown as Resolver<LoginInput>;
+
   const {
     register,
     handleSubmit,
     formState: { errors },
     setError,
   } = useForm<LoginInput>({
-    resolver: zodResolver(loginSchema),
+    resolver,
     defaultValues: { email: "", password: "" },
   });
 
@@ -74,14 +76,14 @@ export default function LoginPage() {
 
     setIsLoading(true);
     try {
-      const formData = new FormData();
-      formData.set("email", data.email.toLowerCase());
-      formData.set("password", data.password);
+      const result = await signIn("credentials", {
+        redirect: false,
+        email: data.email.toLowerCase(),
+        password: data.password,
+      });
 
-      const result = await loginAction(null, formData);
-
-      if ("error" in result) {
-        setError("root", { message: result.error });
+      if (!result || result.error) {
+        setError("root", { message: result?.error ?? "Invalid credentials" });
         toast.error("Authentication failed", {
           description: "Check your credentials and try again.",
         });

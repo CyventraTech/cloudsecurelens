@@ -48,24 +48,26 @@ export async function PATCH(
 
     const d = parsed.data;
 
+    const updateData: Record<string, unknown> = {
+      ...(d.displayName          !== undefined && { displayName: d.displayName }),
+      ...(d.description          !== undefined && { description: d.description }),
+      ...(d.host                 !== undefined && { host: d.host ? encrypt(d.host) : undefined }),
+      ...(d.port                 !== undefined && { port: d.port }),
+      ...(d.dbUsername           !== undefined && { dbUsername: d.dbUsername ? encrypt(d.dbUsername) : undefined }),
+      ...(d.dbPassword           !== undefined && { dbPassword: d.dbPassword ? encrypt(d.dbPassword) : undefined }),
+      ...(d.sslEnabled           !== undefined && { sslEnabled: d.sslEnabled }),
+      ...(d.enableActivityLogs   !== undefined && { enableActivityLogs: d.enableActivityLogs }),
+      ...(d.enableAuditLogs      !== undefined && { enableAuditLogs: d.enableAuditLogs }),
+      ...(d.enableSlowQueryLogs  !== undefined && { enableSlowQueryLogs: d.enableSlowQueryLogs }),
+      ...(d.slowQueryThresholdMs !== undefined && { slowQueryThresholdMs: d.slowQueryThresholdMs }),
+      ...(d.isActive             !== undefined && { isActive: d.isActive }),
+      // Reset status when credentials change
+      ...(d.host || d.dbPassword ? { status: "PENDING" as const } : {}),
+    };
+
     const updated = await prisma.monitoredDatabase.update({
       where: { id },
-      data: {
-        ...(d.displayName          !== undefined && { displayName: d.displayName }),
-        ...(d.description          !== undefined && { description: d.description }),
-        ...(d.host                 !== undefined && { host: d.host ? encrypt(d.host) : null }),
-        ...(d.port                 !== undefined && { port: d.port }),
-        ...(d.dbUsername           !== undefined && { dbUsername: d.dbUsername ? encrypt(d.dbUsername) : null }),
-        ...(d.dbPassword           !== undefined && { dbPassword: d.dbPassword ? encrypt(d.dbPassword) : null }),
-        ...(d.sslEnabled           !== undefined && { sslEnabled: d.sslEnabled }),
-        ...(d.enableActivityLogs   !== undefined && { enableActivityLogs: d.enableActivityLogs }),
-        ...(d.enableAuditLogs      !== undefined && { enableAuditLogs: d.enableAuditLogs }),
-        ...(d.enableSlowQueryLogs  !== undefined && { enableSlowQueryLogs: d.enableSlowQueryLogs }),
-        ...(d.slowQueryThresholdMs !== undefined && { slowQueryThresholdMs: d.slowQueryThresholdMs }),
-        ...(d.isActive             !== undefined && { isActive: d.isActive }),
-        // Reset status when credentials change
-        ...(d.host || d.dbPassword ? { status: "PENDING" as const } : {}),
-      },
+      data: updateData,
       select: { id: true, displayName: true, status: true, updatedAt: true },
     });
 

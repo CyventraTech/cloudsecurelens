@@ -5,7 +5,7 @@ import {
   Users, Plus, Trash2, Loader2, Eye, EyeOff, ShieldCheck,
   Mail, RefreshCw, KeyRound, UserCog, ShieldAlert, ShieldX,
 } from "lucide-react";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
@@ -87,8 +87,10 @@ function AddUserForm({ onSuccess, onCancel }: { onSuccess: () => void; onCancel:
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const resolver = zodResolver(userSchema) as unknown as Resolver<UserFormData>;
+
   const { register, handleSubmit, formState: { errors }, reset, setValue } = useForm<UserFormData>({
-    resolver: zodResolver(userSchema),
+    resolver,
     defaultValues: { role: "VIEWER" },
   });
 

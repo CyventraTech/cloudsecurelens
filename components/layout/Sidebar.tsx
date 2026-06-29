@@ -6,7 +6,7 @@ import { signOut } from "next-auth/react";
 import {
   LayoutDashboard, LogIn, Users, Database, Activity,
   Lightbulb, Shield, LogOut, ChevronLeft, ChevronRight,
-  Settings, Cloud, HardDrive, Separator,
+  Settings, Cloud, HardDrive,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";

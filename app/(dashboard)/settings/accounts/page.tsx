@@ -6,7 +6,7 @@ import {
   XCircle, AlertTriangle, Clock, Loader2, Eye, EyeOff,
   ExternalLink, Copy, Shield
 } from "lucide-react";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
@@ -96,8 +96,10 @@ function AddAccountForm({ onSuccess, onCancel }: { onSuccess: () => void; onCanc
   const [showSecret, setShowSecret] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const resolver = zodResolver(accountSchema) as unknown as Resolver<AccountFormData>;
+
   const { register, handleSubmit, formState: { errors }, reset, setValue, watch } = useForm<AccountFormData>({
-    resolver: zodResolver(accountSchema),
+    resolver,
     defaultValues: { authMethod: "role", environment: "PRODUCTION", region: "us-east-1" } as AccountFormData,
   });
 

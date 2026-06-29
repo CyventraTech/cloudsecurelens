@@ -5,7 +5,7 @@ import {
   HardDrive, Plus, RefreshCw, Trash2, CheckCircle2,
   XCircle, Clock, Loader2, Eye, EyeOff, Lock, AlertTriangle
 } from "lucide-react";
-import { useForm } from "react-hook-form";
+import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
@@ -121,8 +121,10 @@ function AddDatabaseForm({
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const resolver = zodResolver(dbSchema) as unknown as Resolver<DbFormData>;
+
   const { register, handleSubmit, formState: { errors }, setValue, watch, reset } = useForm<DbFormData>({
-    resolver: zodResolver(dbSchema),
+    resolver,
     defaultValues: {
       engine: "AURORA_POSTGRESQL",
       port: 5432,
