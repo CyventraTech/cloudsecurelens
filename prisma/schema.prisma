@@ -1,0 +1,469 @@
+// Prisma v7 schema — driver adapter pattern, URL in prisma.config.ts
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+// Authentication
+// ============================================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          UserRole  @default(VIEWER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  authAccounts Account[]
+  sessions     Session[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================================
+// AWS Account Onboarding
+// Credentials: IAM Role ARN (cross-account AssumeRole) only.
+// Never store raw AWS_ACCESS_KEY / SECRET here.
+// ============================================================
+
+model AwsAccount {
+  id              String        @id @default(cuid())
+  accountId       String        @unique   // 12-digit AWS account ID
+  accountName     String
+  description     String?
+  environment     Environment   @default(PRODUCTION)
+  region          String        @default("us-east-1")
+
+  // Cross-account role (preferred — most secure)
+  roleArn         String?       @db.Text  // arn:aws:iam::ACCT:role/RoleName
+  externalId      String?                 // STS AssumeRole external ID
+
+  // Direct credentials (fallback — stored AES-256 encrypted)
+  accessKeyId     String?       @db.Text  // encrypted
+  secretAccessKey String?       @db.Text  // encrypted
+
+  // Sync state
+  status          AccountStatus @default(PENDING)
+  lastSyncAt      DateTime?
+  lastSyncError   String?       @db.Text
+  syncIntervalMin Int           @default(60)  // how often to poll AWS
+
+  tags            Json?         // { "team": "security", "cost-center": "infra" }
+  isActive        Boolean       @default(true)
+  createdBy       String?       // userId
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Audit data scoped to this account
+  loginAudits         LoginAudit[]
+  iamAudits           IAMAudit[]
+  databaseAudits      DatabaseAudit[]
+  databaseActivities  DatabaseActivity[]
+  recommendations     Recommendation[]
+  monitoredDatabases  MonitoredDatabase[]
+
+  @@index([status])
+  @@index([isActive])
+  @@map("aws_accounts")
+}
+
+// ============================================================
+// Monitored Databases
+// Tracks which RDS/Aurora databases are being monitored.
+// Connection strings are AES-256 encrypted at rest.
+// ============================================================
+
+model MonitoredDatabase {
+  id                  String       @id @default(cuid())
+  awsAccountId        String       // FK → AwsAccount.accountId
+  dbIdentifier        String                // RDS cluster/instance identifier
+  displayName         String
+  description         String?
+  engine              DatabaseEngine
+  host                String       @db.Text  // encrypted endpoint
+  port                Int          @default(5432)
+  databaseName        String
+  region              String       @default("us-east-1")
+
+  // Auth — stored encrypted
+  authType            DbAuthType   @default(PASSWORD)
+  dbUsername          String?      @db.Text  // encrypted
+  dbPassword          String?      @db.Text  // encrypted
+  sslEnabled          Boolean      @default(true)
+  sslCertificate      String?      @db.Text  // encrypted PEM
+
+  // Monitoring config
+  enableActivityLogs  Boolean      @default(true)
+  enableAuditLogs     Boolean      @default(true)
+  enableSlowQueryLogs Boolean      @default(true)
+  slowQueryThresholdMs Int         @default(1000)
+
+  // Status
+  status              MonitorStatus @default(PENDING)
+  lastCheckedAt       DateTime?
+  lastError           String?      @db.Text
+  isActive            Boolean      @default(true)
+  createdBy           String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  awsAccount          AwsAccount   @relation(fields: [awsAccountId], references: [accountId])
+
+  @@unique([awsAccountId, dbIdentifier])
+  @@index([awsAccountId])
+  @@index([status])
+  @@map("monitored_databases")
+}
+
+// ============================================================
+// Login Audit (from AWS CloudTrail)
+// ============================================================
+
+model LoginAudit {
+  id           String         @id @default(cuid())
+  eventId      String         @unique
+  awsAccountId String
+  eventType    LoginEventType
+  eventTime    DateTime
+  username     String
+  sourceIp     String?
+  userAgent    String?        @db.Text
+  region       String?
+  mfaUsed      Boolean        @default(false)
+  loginResult  LoginResult
+  errorCode    String?
+  errorMessage String?        @db.Text
+  createdAt    DateTime       @default(now())
+
+  awsAccount   AwsAccount     @relation(fields: [awsAccountId], references: [accountId])
+
+  @@index([awsAccountId])
+  @@index([eventTime])
+  @@index([username])
+  @@index([loginResult])
+  @@map("login_audits")
+}
+
+// ============================================================
+// IAM Audit
+// ============================================================
+
+model IAMAudit {
+  id                   String     @id @default(cuid())
+  awsAccountId         String
+  username             String
+  arn                  String?
+  mfaEnabled           Boolean    @default(false)
+  isRoot               Boolean    @default(false)
+  passwordEnabled      Boolean?
+  passwordLastUsed     DateTime?
+  passwordLastChanged  DateTime?
+  passwordNextRotation DateTime?
+  accessKey1Active     Boolean?
+  accessKey1LastRotated DateTime?
+  accessKey1LastUsed   DateTime?
+  accessKey2Active     Boolean?
+  accessKey2LastRotated DateTime?
+  accessKey2LastUsed   DateTime?
+  certCount            Int        @default(0)
+  policyCount          Int        @default(0)
+  groupCount           Int        @default(0)
+  isActive             Boolean    @default(true)
+  riskLevel            RiskLevel  @default(LOW)
+  snapshotAt           DateTime   @default(now())
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  awsAccount           AwsAccount @relation(fields: [awsAccountId], references: [accountId])
+
+  @@unique([awsAccountId, username])
+  @@index([awsAccountId])
+  @@index([riskLevel])
+  @@map("iam_audits")
+}
+
+// ============================================================
+// Database Audit (RDS metadata snapshot)
+// ============================================================
+
+model DatabaseAudit {
+  id                     String     @id @default(cuid())
+  awsAccountId           String
+  dbIdentifier           String
+  dbName                 String?
+  engine                 String
+  engineVersion          String?
+  status                 String
+  instanceClass          String?
+  multiAz                Boolean    @default(false)
+  storageEncrypted       Boolean    @default(false)
+  publiclyAccessible     Boolean    @default(false)
+  iamDatabaseAuthEnabled Boolean    @default(false)
+  deletionProtection     Boolean    @default(false)
+  backupRetentionPeriod  Int        @default(0)
+  allocatedStorage       Int?
+  endpoint               String?
+  port                   Int?
+  availabilityZone       String?
+  securityGroupIds       String[]
+  parameterGroupName     String?
+  clusterIdentifier      String?
+  riskLevel              RiskLevel  @default(LOW)
+  snapshotAt             DateTime   @default(now())
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
+
+  awsAccount             AwsAccount @relation(fields: [awsAccountId], references: [accountId])
+
+  @@unique([awsAccountId, dbIdentifier])
+  @@index([awsAccountId])
+  @@index([riskLevel])
+  @@map("database_audits")
+}
+
+// ============================================================
+// Database Activity
+// ============================================================
+
+model DatabaseActivity {
+  id             String     @id @default(cuid())
+  awsAccountId   String
+  dbIdentifier   String
+  queryType      QueryType
+  username       String?
+  databaseName   String?
+  queryText      String?    @db.Text
+  rowsAffected   Int?
+  durationMs     Float?
+  success        Boolean    @default(true)
+  errorCode      String?
+  errorMessage   String?    @db.Text
+  clientHostname String?
+  clientPort     Int?
+  sessionId      String?
+  transactionId  String?
+  recordedAt     DateTime
+  createdAt      DateTime   @default(now())
+
+  awsAccount     AwsAccount @relation(fields: [awsAccountId], references: [accountId])
+
+  @@index([awsAccountId])
+  @@index([dbIdentifier])
+  @@index([queryType])
+  @@index([recordedAt])
+  @@index([success])
+  @@map("database_activities")
+}
+
+// ============================================================
+// Security Recommendations
+// ============================================================
+
+model Recommendation {
+  id           String                 @id @default(cuid())
+  awsAccountId String
+  title        String
+  description  String                 @db.Text
+  severity     Severity
+  category     RecommendationCategory
+  resource     String?
+  resourceType String?
+  status       RecommendationStatus   @default(OPEN)
+  remediation  String?                @db.Text
+  awsDocUrl    String?
+  resolvedAt   DateTime?
+  resolvedBy   String?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  awsAccount   AwsAccount             @relation(fields: [awsAccountId], references: [accountId])
+
+  @@index([awsAccountId])
+  @@index([severity])
+  @@index([status])
+  @@index([category])
+  @@map("recommendations")
+}
+
+// ============================================================
+// Audit Logs (app activity trail)
+// ============================================================
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  resource   String?
+  resourceId String?
+  ipAddress  String?
+  userAgent  String?  @db.Text
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ============================================================
+// Enums
+// ============================================================
+
+enum UserRole {
+  ADMIN
+  ANALYST
+  VIEWER
+}
+
+enum Environment {
+  PRODUCTION
+  STAGING
+  DEVELOPMENT
+  SANDBOX
+}
+
+enum AccountStatus {
+  PENDING
+  ACTIVE
+  ERROR
+  DISABLED
+}
+
+enum MonitorStatus {
+  PENDING
+  CONNECTED
+  ERROR
+  DISABLED
+}
+
+enum DatabaseEngine {
+  AURORA_POSTGRESQL
+  AURORA_MYSQL
+  RDS_POSTGRESQL
+  RDS_MYSQL
+  RDS_SQLSERVER
+  RDS_ORACLE
+}
+
+enum DbAuthType {
+  PASSWORD
+  IAM          // RDS IAM authentication
+  SECRET       // AWS Secrets Manager
+}
+
+enum LoginEventType {
+  CONSOLE_LOGIN
+  CONSOLE_LOGOUT
+  ROOT_LOGIN
+  IAM_LOGIN
+  FEDERATED_LOGIN
+  FAILED_LOGIN
+  ASSUME_ROLE
+}
+
+enum LoginResult {
+  SUCCESS
+  FAILURE
+  PARTIAL
+}
+
+enum RiskLevel {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+enum Severity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+enum RecommendationStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  IGNORED
+}
+
+enum RecommendationCategory {
+  IAM
+  MFA
+  ACCESS_KEY
+  ROOT_ACCOUNT
+  ENCRYPTION
+  NETWORK
+  BACKUP
+  LOGGING
+  DATABASE
+  COMPLIANCE
+}
+
+enum QueryType {
+  SELECT
+  INSERT
+  UPDATE
+  DELETE
+  CREATE_TABLE
+  DROP_TABLE
+  ALTER_TABLE
+  GRANT
+  REVOKE
+  OTHER
+  FAILED
+}
