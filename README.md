@@ -72,6 +72,7 @@ npm run start
 
 ## Screenshots
 
-![Dashboard screenshot](./public/demo-dashboard.png)
+![Dashboard screenshot] <img width="1476" height="906" alt="image" src="https://github.com/user-attachments/assets/9733ed90-f4e1-4364-910e-20a1cdbcfd44" />
+
 
 > Replace this image with actual screenshot assets if available.
