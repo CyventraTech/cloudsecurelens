@@ -19,8 +19,7 @@ Cloud SecureLens is a security audit dashboard for monitoring AWS accounts, IAM 
 - Session-based authentication using NextAuth or a local auth provider
 
 ### Architecture Diagram
-
-![Architecture diagram](./public/architecture-diagram.svg)
+<img width="1024" height="1536" alt="Cloud SecureLens Arc" src="https://github.com/user-attachments/assets/df6c6ffc-7663-4f66-ad69-122bb7f03cfb" />
 
 ## Tech Stack
 
